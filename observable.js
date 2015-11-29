@@ -50,18 +50,35 @@ define([/*'require'*/], // here we get the requirejs object in order to set the 
     }
 
     Observable._derivateDataAttrib = function(attribName) {
+      console.assert(attribName && typeof attribName === "string" && attribName.length, "attribName must be a not null string") // pre
 
-      var self = this
-      this[Observable._prefix + attribName] = this[attribName]
-      Object.defineProperty(this, attribName, {
-          set : function(value) {
-            self[Observable._prefix + attribName] = value
-            var event = new CustomEvent(attribName, { "detail" : { "set" : true }})
-            self.dispatchEvent(event)
-          }
-        })
-      // backup the fact that the attribute is derivated now
-      this[Observable._modifiedAttribSet_label][attribName] = true
+      if (! this[Observable._modifiedAttribSet_label][attribName]) {  // not already done
+        var self = this
+        var propertyDescriptor = Object.getOwnPropertyDescriptor(this, attribName)
+
+        if (propertyDescriptor.get) { // attribute is already a getter
+          
+        }
+
+        if (propertyDescriptor.value !== undefined) { // attribute exists in object
+
+          this[Observable._prefix + attribName] = this[attribName]
+          Object.defineProperty(this, attribName, {
+              set : function(value) {
+                self[Observable._prefix + attribName] = value
+                var event = new CustomEvent(attribName, { "detail" : { "set" : true }})
+                self.dispatchEvent(event)
+              }
+            })
+          // backup the fact that the attribute is derivated now
+          this[Observable._modifiedAttribSet_label][attribName] = true
+          return true
+        }
+
+
+
+      }
+      return false
     }
 
     /**
@@ -82,6 +99,10 @@ define([/*'require'*/], // here we get the requirejs object in order to set the 
       console.assert(this[Observable._event2listener_label])
       console.assert(this[Observable._listener2eventPos_label])
 
+      // try to derivate attribute
+      this._derivateDataAttrib(eventType)
+
+      // Store listener
       if (! this[Observable._event2listener_label][eventType]) {
         this[Observable._event2listener_label][eventType] = []
       }
