@@ -57,11 +57,10 @@ define([/*'require'*/], // here we get the requirejs object in order to set the 
         var propertyDescriptor = Object.getOwnPropertyDescriptor(this, attribName)
 
         if (propertyDescriptor.get) { // attribute is already a getter
-          
+
         }
 
         if (propertyDescriptor.value !== undefined) { // attribute exists in object
-
           this[Observable._prefix + attribName] = this[attribName]
           Object.defineProperty(this, attribName, {
               set : function(value) {
@@ -74,9 +73,6 @@ define([/*'require'*/], // here we get the requirejs object in order to set the 
           this[Observable._modifiedAttribSet_label][attribName] = true
           return true
         }
-
-
-
       }
       return false
     }
