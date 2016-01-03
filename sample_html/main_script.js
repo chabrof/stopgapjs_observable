@@ -12,7 +12,10 @@ function (Mustache, Observable) {
   Observable.enrichObject(obj);
   console.log('Object :', obj)
 
-  obj.addEventListener('attr1', function(data) { console.log('we use attr1 attribute', data) })
+  obj.addEventListener('func1', function(data) { console.log('we use func1 attribute', data) })
+  obj.func1();
+  /*obj.addEventListener('attr1', function(data) { console.log('we use attr1 attribute', data) })
   console.log('After observing it, We read attr1 of object :', obj.attr1)
-  
+  console.log('After observing it, We write attr1 of object')
+  obj.attr1 = "write..."*/
 });

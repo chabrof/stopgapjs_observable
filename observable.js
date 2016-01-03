@@ -12,6 +12,7 @@ define([/*'require'*/], // here we get the requirejs object in order to set the 
     //var ClassP = Observable.prototype
 
     Observable._prefix = "sgjObs_"
+    Observable._funcPrefix = Observable._prefix + "func_"
 
     Observable._init = function() {
       Observable._event2listener_label = Observable._prefix + 'eventType2listeners'
@@ -27,9 +28,11 @@ define([/*'require'*/], // here we get the requirejs object in order to set the 
         "annihilateSet" : false,
         "annihilateCall" : false,
         "set" : true,
-        "get" : true
+        "get" : false,
+        "exec" : true
       }
     }
+
     Observable._init();
 
     /**
@@ -41,7 +44,8 @@ define([/*'require'*/], // here we get the requirejs object in order to set the 
     Observable.config = function (config) {
       console.assert(! Observable._configDone, "config must be done only once") // pre
 
-      Observable._prefix = config.prefix ? config._prefix : Observable._prefix
+      Observable._prefix = (config.prefix ? config._prefix : Observable._prefix)
+      Observable._verbose = (config.verbose ? true : false)
       Observable._init();
       Observable._configDone = true
     }
@@ -63,32 +67,60 @@ define([/*'require'*/], // here we get the requirejs object in order to set the 
       obj[Observable._modifiedAttribSet_label] = {}
     }
 
-    Observable._derivateDataAttrib = function(attribName, config) {
+    Observable._derivateDataAttrib = function (attribName, config) {
       // pre
       console.assert(attribName && typeof attribName === "string" && attribName.length, "attribName must be a not null string") // pre
       console.assert(config && typeof config.get === 'boolean' && typeof config.set === 'boolean', "config must be used and contain set, get, before and after booleans")
 
-      console.log('config', config)
+      // verbose
+      if (Observable._verbose) {
+        console.log('Observable._derivateDataAttrib', attribName, config)
+      }
+
       if (this[Observable._modifiedAttribSet_label][attribName] === undefined) {  // not already done
         var self = this
-        var propertyDescriptor = Object.getOwnPropertyDescriptor(this, attribName)
+        var propertyDescriptor = Object.getOwnPropertyDescriptor(self, attribName)
 
         if (propertyDescriptor.get) { // attribute is already a getter
 
         }
 
-        if (propertyDescriptor.value !== undefined) { // attribute exists in object
-          this[Observable._prefix + attribName] = this[attribName]
+        self[Observable._prefix + attribName] = self[attribName]
 
-          Object.defineProperty(this, attribName, {
-              set : function(value) {
-                if (config.set && config.before) {
-                  var event = new CustomEvent(attribName, { "detail" : { "set" : true }})
+        if (propertyDescriptor.value !== undefined) { // attribute exists in object
+          if (typeof self[attribName] === "function") {
+            self[Observable._funcPrefix + attribName] =
+              function () {
+                var event
+                // before exec
+                if (config.exec && config.before) {
+                  event = new CustomEvent(attribName, { "detail" : { "exec" : true, "before" : true }})
                   self.dispatchEvent(event)
                 }
+                // exec
+                var returnValue = self[Observable._prefix + attribName].apply(self, arguments)
+                // after exec
+                if (config.exec && config.after) {
+                  event = new CustomEvent(attribName, { "detail" : { "exec" : true, "after" : true }})
+                  self.dispatchEvent(event)
+                }
+                return returnValue
+              }
+          }
+
+          Object.defineProperty(self, attribName, {
+              set : function (value) {
+                var event
+                // before set
+                if (config.set && config.before) {
+                  event = new CustomEvent(attribName, { "detail" : { "set" : true }})
+                  self.dispatchEvent(event)
+                }
+                // set
                 self[Observable._prefix + attribName] = value
+                // after set
                 if (config.set && config.after) {
-                  var event = new CustomEvent(attribName, { "detail" : { "set" : true }})
+                  event = new CustomEvent(attribName, { "detail" : { "set" : true }})
                   self.dispatchEvent(event)
                 }
               },
@@ -97,11 +129,11 @@ define([/*'require'*/], // here we get the requirejs object in order to set the 
                   var event = new CustomEvent(attribName, { "detail" : { "get" : true }})
                   self.dispatchEvent(event)
                 }
-                return self[Observable._prefix + attribName]
+                return config.exec ? self[Observable._funcPrefix + attribName] : self[Observable._prefix + attribName]
               }
             })
           // backup the fact that the attribute is derivated now
-          this[Observable._modifiedAttribSet_label][attribName] = true
+          self[Observable._modifiedAttribSet_label][attribName] = true
           return true
         }
       }
@@ -116,6 +148,7 @@ define([/*'require'*/], // here we get the requirejs object in order to set the 
      * in this method, "this" represents the object we have enriched
      * @param eventName [string]
      * @param cbk [Function]
+     * @param config [Object] (will be merged with the default config : see Observable._defaultAttrListenerConfig in _init method)
      * @return listenerIdx [integer]
      */
     Observable._addEventListener = function(eventType, cbk, config) {
@@ -126,6 +159,11 @@ define([/*'require'*/], // here we get the requirejs object in order to set the 
       console.assert(this[Observable._event2listener_label])
       console.assert(this[Observable._listenersInfo_label])
 
+      // verbose
+      if (Observable._verbose) {
+        console.log('Observable._addEventListener', eventType, cbk, config)
+      }
+
       // manage config with default values
       config = (config ? config : {})
       for (var key in  Observable._defaultAttrListenerConfig) {
@@ -134,7 +172,6 @@ define([/*'require'*/], // here we get the requirejs object in order to set the 
         }
       }
 
-      console.log('config 1', config)
       // try to derivate attribute
       this._derivateDataAttrib(eventType, config)
 
@@ -145,7 +182,7 @@ define([/*'require'*/], // here we get the requirejs object in order to set the 
 
       var listener = {
         "type"    : eventType,
-        "cbkIdx"  : this[Observable._event2listener_label].length,
+        "cbkIdx"  : this[Observable._event2listener_label][eventType].length,
         "cbk"     : cbk,
         "config"  : config
       }
@@ -164,7 +201,12 @@ define([/*'require'*/], // here we get the requirejs object in order to set the 
      * @return [boolean] (true if listener exists)
      */
     Observable._removeEventListener = function(listenerIdx) {
-      console.assert(typeof listenerIdx === "number" && listenerIdx >= 0, "listenerIdx must be a not negative integer") //pre
+      console.assert(typeof listenerIdx === "number" && listenerIdx >= 0, "listenerIdx must be a not negative integer") // pre
+
+      // verbose
+      if (Observable._verbose) {
+        console.log('Observable._removeEventListener', listenerIdx)
+      }
 
       var listenerInfo = this[Observable._listenersInfo_label][listenerIdx]
       if (! listenerInfo) {
@@ -194,10 +236,14 @@ define([/*'require'*/], // here we get the requirejs object in order to set the 
     Observable._dispatchEvent = function (customEvent) {
       console.assert(customEvent.type, 'customEvent must have a "type" attribute') // pre
 
-      function locEventCbkCall(cbk) { cbk(customEvent) }
-      this[Observable.prefix + 'eventType2listeners'][customEvent.type].forEach(locEventCbkCall)
-    }
+      // verbose
+      if (Observable._verbose) {
+        console.log('Observable._dispatchEvent', customEvent)
+      }
 
+      function locEventCbkCall(listener) { listener.cbk(customEvent) }
+      this[Observable._event2listener_label][customEvent.type].forEach(locEventCbkCall)
+    }
     return Observable
   }
 )
