@@ -1,7 +1,7 @@
 {
   "name": "stopgapjs_observable",
-  "description": "Effective and simple Json query manager for relationnal databases",
-  "version": "0.0.3",
+  "description": "Spy for Javascript Object Instance",
+  "version": "0.0.1",
   "license": "MIT",
   "author": {
     "name": "François Chabrou",
@@ -17,5 +17,5 @@
   "engines": {
     "node": ">= 0.8"
   },
-  "readme": "#stopgapjs"
+  "readme": ""
 }
