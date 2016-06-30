@@ -129,7 +129,7 @@ define([/*'require'*/], // here we get the requirejs object in order to set the 
                   var event = new CustomEvent(attribName, { "detail" : { "get" : true }})
                   self.dispatchEvent(event)
                 }
-                return config.exec ? self[Observable._funcPrefix + attribName] : self[Observable._prefix + attribName]
+                return self[Observable._prefix + attribName]
               }
             })
           // backup the fact that the attribute is derivated now
