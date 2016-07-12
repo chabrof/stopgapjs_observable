@@ -3,18 +3,19 @@ if (typeof define !== 'function') { var define = require('amdefine')(module); }
 
 define([/*'require'*/], // here we get the requirejs object in order to set the cur path to the path of this top level file
   function (/*requirejs*/) {
-    "use strict"
-  	//requirejs.config({
-  		//urlArgs: "bust=" + (new Date()).getTime()
-  	//});
+    "use strict";
+    //requirejs.config({
+    //  urlArgs: bust=" + (new Date()).getTime()
+    //});
+
 
     var Observable = {}
-    //var ClassP = Observable.prototype
-
-    Observable._prefix = "sgjObs_"
-    Observable._funcPrefix = Observable._prefix + "func_"
 
     Observable._init = function() {
+      Observable._prefix = "sgjObs_"
+      Observable._funcPrefix = Observable._prefix + "func_"
+      Observable._getPrefix = Observable._prefix + "get_"
+      Observable._setPrefix = Observable._prefix + "set_"
       Observable._event2listener_label = Observable._prefix + 'eventType2listeners'
       Observable._lIdx2e_label = Observable._prefix + 'listenerIdx2event'
       Observable._modifiedAttribSet_label = Observable._prefix + 'derivatedAttribSet'
@@ -25,8 +26,8 @@ define([/*'require'*/], // here we get the requirejs object in order to set the 
       Observable._defaultAttrListenerConfig = {
         "before" : false,
         "after"  : true,
-        "annihilateSet" : false,
-        "annihilateCall" : false,
+        //"annihilateSet" : false,
+        //"annihilateCall" : false,
         "set" : true,
         "get" : false,
         "exec" : true
@@ -46,7 +47,6 @@ define([/*'require'*/], // here we get the requirejs object in order to set the 
 
       Observable._prefix = (config.prefix ? config._prefix : Observable._prefix)
       Observable._verbose = (config.verbose ? true : false)
-      Observable._init();
       Observable._configDone = true
     }
 
@@ -54,20 +54,27 @@ define([/*'require'*/], // here we get the requirejs object in order to set the 
      * enrichObject
      * add observable methods such as addEventListener to the object we want to observe
      * Static methods : use Observable.enrichObject(obj)
-     * @param obj [Object]
+     * @param obj [object]
      * @return [undefined]
      */
     Observable.enrichObject = function (obj) {
       obj.addEventListener = Observable._addEventListener
       obj.removeEventListener = Observable._removeEventListener
       obj.dispatchEvent = Observable._dispatchEvent
-      obj._derivateDataAttrib = Observable._derivateDataAttrib
       obj[Observable._event2listener_label] = {}
       obj[Observable._listenersInfo_label] = {}
       obj[Observable._modifiedAttribSet_label] = {}
     }
-
-    Observable._derivateDataAttrib = function (attribName, config) {
+    
+    /**
+     * _derivateAttrib
+     * modify behavior of attribute in order to dispatch event when using it
+     * @param obj [object]
+     * @param attribName [string]
+     * @param config [json object]
+     * @return [boolean]
+     */
+    Observable._derivateAttrib = function (obj, attribName, config) {
       // pre
       console.assert(attribName && typeof attribName === "string" && attribName.length, "attribName must be a not null string") // pre
       console.assert(config && typeof config.get === 'boolean' && typeof config.set === 'boolean', "config must be used and contain set, get, before and after booleans")
@@ -77,67 +84,152 @@ define([/*'require'*/], // here we get the requirejs object in order to set the 
         console.log('Observable._derivateDataAttrib', attribName, config)
       }
 
-      if (this[Observable._modifiedAttribSet_label][attribName] === undefined) {  // not already done
-        var self = this
-        var propertyDescriptor = Object.getOwnPropertyDescriptor(self, attribName)
+      var propertyDescriptor = Object.getOwnPropertyDescriptor(obj, attribName)
 
-        if (propertyDescriptor.get) { // attribute is already a getter
-
+      if (obj[Observable._modifiedAttribSet_label][attribName] === undefined && // already done
+          propertyDescriptor.configurable) {// attribute can be configured
+        
+        // If the attribute is a function 
+        if (Observable._derivateFuncAttrib(obj, attribName, config)) {
+          // backup the fact that the attribute is derivated now and exit
+          obj[Observable._modifiedAttribSet_label][attribName] = true
+          return true
         }
-
-        self[Observable._prefix + attribName] = self[attribName]
-
-        if (propertyDescriptor.value !== undefined) { // attribute exists in object
-          if (typeof self[attribName] === "function") {
-            self[Observable._funcPrefix + attribName] =
-              function () {
-                var event
-                // before exec
-                if (config.exec && config.before) {
-                  event = new CustomEvent(attribName, { "detail" : { "exec" : true, "before" : true }})
-                  self.dispatchEvent(event)
-                }
-                // exec
-                var returnValue = self[Observable._prefix + attribName].apply(self, arguments)
-                // after exec
-                if (config.exec && config.after) {
-                  event = new CustomEvent(attribName, { "detail" : { "exec" : true, "after" : true }})
-                  self.dispatchEvent(event)
-                }
-                return returnValue
-              }
-          }
-
-          Object.defineProperty(self, attribName, {
-              set : function (value) {
-                var event
-                // before set
-                if (config.set && config.before) {
-                  event = new CustomEvent(attribName, { "detail" : { "set" : true }})
-                  self.dispatchEvent(event)
-                }
-                // set
-                self[Observable._prefix + attribName] = value
-                // after set
-                if (config.set && config.after) {
-                  event = new CustomEvent(attribName, { "detail" : { "set" : true }})
-                  self.dispatchEvent(event)
-                }
-              },
-              get : function() {
-                if (config.get) {
-                  var event = new CustomEvent(attribName, { "detail" : { "get" : true }})
-                  self.dispatchEvent(event)
-                }
-                return config.exec ? self[Observable._funcPrefix + attribName] : self[Observable._prefix + attribName]
-              }
-            })
-          // backup the fact that the attribute is derivated now
-          self[Observable._modifiedAttribSet_label][attribName] = true
+        
+        // If the attribute is a getter or setter
+        if (Observable._derivateGetOrSetAttrib(obj, propertyDescriptor, attribName, config)) {
+          // backup the fact that the attribute is derivated now and exit
+          obj[Observable._modifiedAttribSet_label][attribName] = true
+          return true
+        }          
+        
+        // If the attribute is a "simple data" (value without the use of get or set Js capabilities)
+        if (Observable._derivateDataAttrib(obj, propertyDescriptor, attribName, config)) {
+          obj[Observable._modifiedAttribSet_label][attribName] = true
           return true
         }
       }
       return false
+    }
+
+    Observable._derivateFuncAttrib = function(obj, attribName, config) {
+      if (config.exec && typeof obj[attribName] === "function") {
+        if (Observable._verbose) {
+          console.log('Observable._derivateFuncAttrib (succes)', obj, attribName, config)
+        }
+        obj[Observable._funcPrefix + attribName] =
+          function () {
+            var event
+            // Before exec
+            if (config.exec && config.before) {
+              event = new CustomEvent(attribName, { "detail" : { "exec" : true, "before" : true }})
+              obj.dispatchEvent(event)
+            }
+            
+            // Exec
+            var returnValue = obj[Observable._prefix + attribName].apply(obj, arguments)
+            
+            // After exec
+            if (config.exec && config.after) {
+              event = new CustomEvent(attribName, { "detail" : { "exec" : true, "after" : true }})
+              obj.dispatchEvent(event)
+            }
+            return returnValue
+          }
+        return true
+      }
+      return false;
+    }
+
+    Observable._derivateGetOrSetAttrib = function(obj, propertyDescriptor, attribName, config) {
+      var derivationDone = false
+      
+      if (config.get && propertyDescriptor.get) { 
+        if (Observable._verbose) {
+          console.log('Observable._derivateGetOrSetAttrib (succes on get)', obj, attribName, config)
+        }
+        // Store get
+        obj[Observable._getPrefix + attribName] = propertyDescriptor.get
+        
+        // Redefine get
+        propertyDescriptor.get = function() {
+          var event = new CustomEvent(attribName, { "detail" : { "get" : true }})
+          obj.dispatchEvent(event)
+          return obj[Observable._getPrefix + attribName]();
+        }
+        
+        derivationDone = true
+      }
+      
+      if (config.set && propertyDescriptor.set) { 
+        if (Observable._verbose) {
+          console.log('Observable._derivateGetOrSetAttrib (succes on set)', obj, attribName, config)
+        }
+        // Store set
+        obj[Observable._setPrefix + attribName] = propertyDescriptor.set
+        
+        // Redefine set
+        propertyDescriptor.set = function(value) {
+          // Before set
+          var event
+          if (config.set && config.before) {
+            event = new CustomEvent(attribName, { "detail" : { "get" : true }})
+            obj.dispatchEvent(event)
+          }
+          // Set
+          obj[Observable._setPrefix + attribName](value)
+          // After set
+          if (config.set && config.after) {
+            event = new CustomEvent(attribName, { "detail" : { "set" : true }})
+            obj.dispatchEvent(event)
+          }
+        }
+        derivationDone = true
+      }
+      
+      if (derivationDone) {
+        Object.defineProperty(obj, attribName, propertyDescriptor)
+      }
+      return derivationDone;
+    }
+    
+    Observable._derivateDataAttrib = function(obj, propertyDescriptor, attribName, config) {
+      
+      if ('value' in propertyDescriptor && 
+          (config.set || config.get)) { 
+            
+        if (Observable._verbose) {
+          console.log('Observable._derivateDataAttrib', obj, attribName, config)
+        }
+        obj[Observable._prefix + attribName] = obj[attribName]
+        
+        Object.defineProperty(obj, attribName, {
+            set : function (value) {
+              var event
+              // Before set
+              if (config.set && config.before) {
+                event = new CustomEvent(attribName, { "detail" : { "set" : true }})
+                obj.dispatchEvent(event)
+              }
+              // Set
+              obj[Observable._prefix + attribName] = value
+              // After set
+              if (config.set && config.after) {
+                event = new CustomEvent(attribName, { "detail" : { "set" : true }})
+                obj.dispatchEvent(event)
+              }
+            },
+            get : function() {
+              if (config.get) {
+                var event = new CustomEvent(attribName, { "detail" : { "get" : true }})
+                obj.dispatchEvent(event)
+              }
+              return obj[Observable._prefix + attribName]
+            }
+          })
+        return true
+      }
+      return false;
     }
 
     /**
@@ -147,9 +239,9 @@ define([/*'require'*/], // here we get the requirejs object in order to set the 
      * add observer to a particular event
      * in this method, "this" represents the object we have enriched
      * @param eventName [string]
-     * @param cbk [Function]
-     * @param config [Object] (will be merged with the default config : see Observable._defaultAttrListenerConfig in _init method)
-     * @return listenerIdx [integer]
+     * @param cbk [function]
+     * @param config [object] (will be merged with the default config : see Observable._defaultAttrListenerConfig in _init method)
+     * @return listenerIdx [number(integer)]
      */
     Observable._addEventListener = function(eventType, cbk, config) {
       // pre
@@ -171,9 +263,11 @@ define([/*'require'*/], // here we get the requirejs object in order to set the 
           config[key] = (config[key] ? config[key] : Observable._defaultAttrListenerConfig[key])
         }
       }
-
-      // try to derivate attribute
-      this._derivateDataAttrib(eventType, config)
+      
+      //
+      // Try to derivate attribute
+      //
+      Observable._derivateAttrib(this, eventType, config)
 
       // store listener
       if (! this[Observable._event2listener_label][eventType]) {
@@ -197,7 +291,7 @@ define([/*'require'*/], // here we get the requirejs object in order to set the 
      *
      * remove an identified listener
      * in this method, "this" represents the object we have enriched
-     * @param listenerIdx [integer]
+     * @param listenerIdx [number(integer)]
      * @return [boolean] (true if listener exists)
      */
     Observable._removeEventListener = function(listenerIdx) {
@@ -212,8 +306,8 @@ define([/*'require'*/], // here we get the requirejs object in order to set the 
       if (! listenerInfo) {
         return false
       }
-      this[Observable._event2listener_label][listenerInfo.type].splice(listenerInfo.cbkIdx, 1);
-      this[Observable._listenersInfo_label][listenerIdx] = undefined;
+      this[Observable._event2listener_label][listenerInfo.type].splice(listenerInfo.cbkIdx, 1)
+      this[Observable._listenersInfo_label][listenerIdx] = undefined
 
       return true
     }
@@ -230,8 +324,8 @@ define([/*'require'*/], // here we get the requirejs object in order to set the 
      *     ...   : ...,
      * })
      * in this method, "this" represents the object we have enriched
-     * @param customEvent [CustomEvent] or [Object]  wich implements CustomEvent interface
-     * @return listenerIdx [integer]
+     * @param customEvent [CustomEvent] or [object]  wich implements CustomEvent interface
+     * @return listenerIdx [number(integer)]
      */
     Observable._dispatchEvent = function (customEvent) {
       console.assert(customEvent.type, 'customEvent must have a "type" attribute') // pre
